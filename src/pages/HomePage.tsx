@@ -59,28 +59,137 @@ export default function HomePage() {
 
   const loadData = async () => {
     try {
+      console.log('📥 Loading data from storage...');
+      
       const [collectionsData, urlsData] = await Promise.all([
         storage.getCollections(),
         storage.getURLs(),
       ]);
 
-      setCollectionsMap(collectionsData);
-      setUrls(urlsData);
+      console.log('📊 Raw data loaded:', {
+        collections: Object.keys(collectionsData).length,
+        urls: Object.keys(urlsData).length
+      });
+
+      // Run data health check and cleanup if needed
+      console.log('🔍 Running data health check...');
+      const healthReport = await storage.getDataHealthReport();
+      
+      if (!healthReport.isHealthy) {
+        console.warn('⚠️ Data inconsistencies detected:', {
+          orphanedReferences: healthReport.stats.orphanedReferences,
+          issues: healthReport.issues
+        });
+        
+        console.log('🔧 Running smart data validation and cleanup...');
+        const validationResult = await storage.validateAndCleanupData(5); // 5 minute threshold
+        
+        console.log('📋 Smart validation results:', {
+          orphanedUrlsFound: validationResult.orphanedUrlsRemoved,
+          collectionsFixed: validationResult.collectionsFixed.length,
+          collectionsFixedNames: validationResult.collectionsFixed,
+          errors: validationResult.errors.length
+        });
+        
+        if (validationResult.collectionsFixed.length > 0) {
+          console.log('✅ Collections were cleaned up, reloading data...');
+          
+          // Reload data after cleanup
+          const [cleanedCollections, cleanedUrls] = await Promise.all([
+            storage.getCollections(),
+            storage.getURLs(),
+          ]);
+          
+          setCollectionsMap(cleanedCollections);
+          setUrls(cleanedUrls);
+          
+          console.log('📊 Clean data loaded:', {
+            collections: Object.keys(cleanedCollections).length,
+            urls: Object.keys(cleanedUrls).length,
+            cleanedCollections: validationResult.collectionsFixed
+          });
+        } else if (validationResult.orphanedUrlsRemoved > 5) {
+          // If there are many orphans that weren't cleaned (too recent), run manual cleanup
+          console.warn('⚠️ Many orphaned URLs detected but they are too recent for auto-cleanup:', {
+            orphanedCount: validationResult.orphanedUrlsRemoved,
+            action: 'Running manual cleanup to fix this issue'
+          });
+          
+          console.log('🧹 Running manual cleanup for orphaned URLs...');
+          const manualCleanupResult = await storage.cleanupOrphanedReferences(true);
+          
+          if (manualCleanupResult.collectionsFixed.length > 0) {
+            console.log('✅ Manual cleanup completed, reloading data...');
+            
+            // Reload data after manual cleanup
+            const [cleanedCollections, cleanedUrls] = await Promise.all([
+              storage.getCollections(),
+              storage.getURLs(),
+            ]);
+            
+            setCollectionsMap(cleanedCollections);
+            setUrls(cleanedUrls);
+            
+            console.log('📊 Data after manual cleanup:', {
+              collections: Object.keys(cleanedCollections).length,
+              urls: Object.keys(cleanedUrls).length,
+              cleanedCollections: manualCleanupResult.collectionsFixed,
+              orphansRemoved: manualCleanupResult.orphanedUrlsRemoved
+            });
+          } else {
+            console.log('📋 No orphans removed in manual cleanup');
+            setCollectionsMap(collectionsData);
+            setUrls(urlsData);
+          }
+        } else {
+          console.log('📋 Using original data (no cleanup performed)');
+          setCollectionsMap(collectionsData);
+          setUrls(urlsData);
+        }
+      } else {
+        console.log('✅ Data is healthy, no cleanup needed');
+        setCollectionsMap(collectionsData);
+        setUrls(urlsData);
+      }
 
       // Initialize search index
+      console.log('🔍 Initializing search service...');
       await searchService.initialize();
+      console.log('✅ Search service initialized');
+      
     } catch (error) {
-      console.error('Failed to load data:', error);
+      console.error('❌ Failed to load data:', {
+        error: error instanceof Error ? error.message : error,
+        stack: error instanceof Error ? error.stack : undefined
+      });
     } finally {
       setIsLoading(false);
     }
   };
 
   const handleSaveTab = async (url: string, title: string, collectionId: string) => {
+    console.log('💾 Starting handleSaveTab:', {
+      url,
+      title,
+      collectionId,
+      timestamp: new Date().toISOString()
+    });
+
     try {
       // Get collection
       const collection = collectionsMap[collectionId];
-      if (!collection) return;
+      if (!collection) {
+        console.error('❌ Collection not found in collectionsMap:', {
+          collectionId,
+          availableCollections: Object.keys(collectionsMap)
+        });
+        return;
+      }
+
+      console.log('✅ Collection found:', {
+        collectionName: collection.name,
+        currentUrlCount: collection.urlIds.length
+      });
 
       // Try to get favicon from current tab if it matches
       let faviconUrl = getFaviconUrl(url); // Fallback to external service
@@ -88,9 +197,12 @@ export default function HomePage() {
         const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
         if (activeTab && activeTab.url === url && activeTab.favIconUrl) {
           faviconUrl = activeTab.favIconUrl;
+          console.log('✅ Using tab favicon:', activeTab.favIconUrl);
+        } else {
+          console.log('🔄 Using fallback favicon service');
         }
       } catch (error) {
-        console.log('Could not query active tab for favicon, using fallback');
+        console.warn('⚠️ Could not query active tab for favicon, using fallback:', error);
       }
 
       // Create new URL
@@ -108,38 +220,119 @@ export default function HomePage() {
         lastAccessedAt: Date.now(),
       };
 
+      console.log('📄 Created new URL object:', {
+        urlId,
+        url: newUrl.url,
+        title: newUrl.originalTitle,
+        collectionIds: newUrl.collectionIds,
+        position: newUrl.position
+      });
+
       // Update collection
       collection.urlIds.push(urlId);
       collection.updatedAt = Date.now();
 
-      // Save to storage
-      await Promise.all([
-        storage.saveURL(newUrl),
-        storage.saveCollection(collection),
-      ]);
+      console.log('🔄 Updated collection with new URL:', {
+        collectionId,
+        urlIdsCount: collection.urlIds.length,
+        newUrlIds: collection.urlIds
+      });
+
+      // Save to storage with individual error handling
+      console.log('💾 Starting storage operations...');
+      
+      try {
+        await storage.saveURL(newUrl);
+        console.log('✅ URL saved to storage successfully:', urlId);
+      } catch (urlSaveError) {
+        console.error('❌ Failed to save URL to storage:', {
+          urlId,
+          error: urlSaveError instanceof Error ? urlSaveError.message : urlSaveError,
+          stack: urlSaveError instanceof Error ? urlSaveError.stack : undefined
+        });
+        throw new Error(`URL save failed: ${urlSaveError instanceof Error ? urlSaveError.message : urlSaveError}`);
+      }
+
+      try {
+        await storage.saveCollection(collection);
+        console.log('✅ Collection saved to storage successfully:', collectionId);
+      } catch (collectionSaveError) {
+        console.error('❌ Failed to save collection to storage:', {
+          collectionId,
+          error: collectionSaveError instanceof Error ? collectionSaveError.message : collectionSaveError,
+          stack: collectionSaveError instanceof Error ? collectionSaveError.stack : undefined
+        });
+        throw new Error(`Collection save failed: ${collectionSaveError instanceof Error ? collectionSaveError.message : collectionSaveError}`);
+      }
 
       // Update state
-      setUrls(prev => ({ ...prev, [urlId]: newUrl }));
-      setCollectionsMap(prev => ({ ...prev, [collectionId]: collection }));
+      setUrls(prev => {
+        const updated = { ...prev, [urlId]: newUrl };
+        console.log('🔄 Updated URLs state:', {
+          urlId,
+          totalUrls: Object.keys(updated).length,
+          newUrlAdded: !!updated[urlId]
+        });
+        return updated;
+      });
+
+      setCollectionsMap(prev => {
+        const updated = { ...prev, [collectionId]: collection };
+        console.log('🔄 Updated collections state:', {
+          collectionId,
+          urlIdsCount: updated[collectionId]?.urlIds.length ?? 0
+        });
+        return updated;
+      });
+
+      console.log('✅ handleSaveTab completed successfully:', {
+        urlId,
+        collectionId,
+        totalTime: urlId ? Date.now() - (parseInt(urlId.split('-')[0] ?? '0') || 0) : 0
+      });
+
     } catch (error) {
-      console.error('Failed to save tab:', error);
+      console.error('❌ handleSaveTab failed completely:', {
+        url,
+        title,
+        collectionId,
+        error: error instanceof Error ? error.message : error,
+        stack: error instanceof Error ? error.stack : undefined,
+        timestamp: new Date().toISOString()
+      });
+      
+      // Try to reload data to ensure consistency
+      console.log('🔄 Reloading data due to save failure...');
+      try {
+        await loadData();
+        console.log('✅ Data reloaded after save failure');
+      } catch (reloadError) {
+        console.error('❌ Failed to reload data after save failure:', reloadError);
+      }
     }
   };
 
   const handleSaveAllTabs = async (collectionName: string, tabs: any[]) => {
+    const operationId = `saveAllTabs-${Date.now()}-${tabs.length}`;
+    const startTime = Date.now();
+    
+    console.log(`📥 [${operationId}] Starting ATOMIC Save All Tabs operation:`, {
+      collectionName,
+      tabCount: tabs.length,
+      tabUrls: tabs.slice(0, 3).map(tab => tab.url).concat(tabs.length > 3 ? [`...and ${tabs.length - 3} more`] : [])
+    });
+
     try {
-      // Create new collection
+      // Check storage quota before starting
+      const quotaInfo = await storage.getStorageQuotaInfo();
+      if (quotaInfo.isNearLimit) {
+        console.warn(`⚠️ [${operationId}] Storage is near limit (${quotaInfo.usagePercentage.toFixed(2)}%), proceeding with caution`);
+      }
+
       const collectionId = generateId();
       const now = Date.now();
 
-      const newCollection: Collection = {
-        id: collectionId,
-        name: collectionName,
-        createdAt: now,
-        updatedAt: now,
-        position: collections.length,
-        urlIds: [],
-      };
+      console.log(`📄 [${operationId}] Creating ${tabs.length} URL objects...`);
 
       // Create URLs for all tabs
       const newUrls: Record<string, SavedURL> = {};
@@ -163,19 +356,115 @@ export default function HomePage() {
         };
       });
 
-      newCollection.urlIds = urlIds;
+      console.log(`💾 [${operationId}] STEP 1: Saving all URLs sequentially with verification...`);
+      
+      // STEP 1: Save ALL URLs sequentially with verification and retry
+      const savedUrls: string[] = [];
+      const urlArray = Object.values(newUrls);
+      
+      for (let i = 0; i < urlArray.length; i++) {
+        const url = urlArray[i];
+        if (!url) {
+          throw new Error(`URL at index ${i} is undefined`);
+        }
+        
+        console.log(`🔄 [${operationId}] Saving URL ${i + 1}/${urlArray.length}: ${url.originalTitle.substring(0, 50)}${url.originalTitle.length > 50 ? '...' : ''}`);
+        
+        try {
+          await storage.saveURLWithVerification(url, 3); // 3 retries
+          savedUrls.push(url.id);
+          console.log(`✅ [${operationId}] URL ${i + 1}/${urlArray.length} saved and verified`);
+        } catch (error) {
+          console.error(`❌ [${operationId}] CRITICAL: Failed to save URL ${i + 1}/${urlArray.length}:`, {
+            urlId: url.id,
+            url: url.url,
+            title: url.originalTitle,
+            error: error instanceof Error ? error.message : error
+          });
+          
+          // CLEANUP: Remove any URLs that were successfully saved
+          if (savedUrls.length > 0) {
+            console.log(`🧹 [${operationId}] Cleaning up ${savedUrls.length} successfully saved URLs due to failure...`);
+            for (const urlId of savedUrls) {
+              try {
+                await storage.deleteURL(urlId);
+                console.log(`🗑️ [${operationId}] Cleaned up URL: ${urlId}`);
+              } catch (cleanupError) {
+                console.error(`❌ [${operationId}] Failed to cleanup URL ${urlId}:`, cleanupError);
+              }
+            }
+          }
+          
+          throw new Error(`Atomic operation failed: URL save failed for "${url.originalTitle}": ${error instanceof Error ? error.message : error}`);
+        }
+      }
 
-      // Save to storage
-      await Promise.all([
-        storage.saveCollection(newCollection),
-        ...Object.values(newUrls).map(url => storage.saveURL(url)),
-      ]);
+      console.log(`✅ [${operationId}] STEP 1 COMPLETE: All ${urlArray.length} URLs saved and verified successfully`);
+
+      // STEP 2: Create and save collection (only after all URLs are confirmed saved)
+      console.log(`🗂️ [${operationId}] STEP 2: Creating collection with verified URL IDs...`);
+      
+      const newCollection: Collection = {
+        id: collectionId,
+        name: collectionName,
+        createdAt: now,
+        updatedAt: now,
+        position: collections.length,
+        urlIds: urlIds, // All URLs are now guaranteed to exist in storage
+      };
+
+      try {
+        await storage.saveCollection(newCollection);
+        console.log(`✅ [${operationId}] STEP 2 COMPLETE: Collection saved successfully`);
+      } catch (error) {
+        console.error(`❌ [${operationId}] CRITICAL: Collection save failed, cleaning up all URLs...`);
+        
+        // CLEANUP: Remove all saved URLs since collection creation failed
+        for (const urlId of urlIds) {
+          try {
+            await storage.deleteURL(urlId);
+            console.log(`🗑️ [${operationId}] Cleaned up URL: ${urlId}`);
+          } catch (cleanupError) {
+            console.error(`❌ [${operationId}] Failed to cleanup URL ${urlId}:`, cleanupError);
+          }
+        }
+        
+        throw new Error(`Atomic operation failed: Collection save failed: ${error instanceof Error ? error.message : error}`);
+      }
+
+      const duration = Date.now() - startTime;
+      console.log(`🎉 [${operationId}] ATOMIC SAVE ALL TABS COMPLETED SUCCESSFULLY (${duration}ms):`, {
+        collectionId,
+        collectionName,
+        urlsSaved: urlIds.length,
+        totalTime: duration,
+        urlsVerified: savedUrls.length
+      });
 
       // Update state
       setCollectionsMap(prev => ({ ...prev, [collectionId]: newCollection }));
       setUrls(prev => ({ ...prev, ...newUrls }));
+      
     } catch (error) {
-      console.error('Failed to save all tabs:', error);
+      const duration = Date.now() - startTime;
+      console.error(`💥 [${operationId}] ATOMIC SAVE ALL TABS FAILED COMPLETELY (${duration}ms):`, {
+        collectionName,
+        tabCount: tabs.length,
+        error: error instanceof Error ? error.message : error,
+        stack: error instanceof Error ? error.stack : undefined
+      });
+      
+      // Reload data to ensure UI consistency after failure
+      console.log(`🔄 [${operationId}] Reloading data to ensure UI consistency...`);
+      try {
+        await loadData();
+        console.log(`✅ [${operationId}] Data reloaded after atomic save failure`);
+      } catch (reloadError) {
+        console.error(`❌ [${operationId}] Failed to reload data after atomic save failure:`, reloadError);
+      }
+      
+      // Re-throw to show error to user
+      throw error;
     }
   };
 
@@ -495,6 +784,24 @@ export default function HomePage() {
           });
           
           try {
+            // Verify URL actually exists in storage before trying to add to collection
+            console.log('🔍 Verifying URL exists in storage...');
+            const urlInStorage = await storage.getURL(existingSavedUrl.id);
+            
+            if (!urlInStorage) {
+              console.warn('⚠️ URL found in state but not in storage, saving first:', {
+                urlId: existingSavedUrl.id,
+                url: existingSavedUrl.url,
+                title: existingSavedUrl.originalTitle
+              });
+              
+              // Save the URL to storage first to fix state/storage desync
+              await storage.saveURL(existingSavedUrl);
+              console.log('✅ URL persisted to storage successfully');
+            } else {
+              console.log('✅ URL verified in storage');
+            }
+            
             // Add to target collection using storage service
             await storage.addURLToCollection(existingSavedUrl.id, targetCollection.id);
             console.log('✅ Successfully added saved tab to new collection');
@@ -502,7 +809,12 @@ export default function HomePage() {
             // Refresh state
             await loadData();
           } catch (error) {
-            console.error('❌ Failed to add saved tab to collection:', error);
+            console.error('❌ Failed to add saved tab to collection:', {
+              urlId: existingSavedUrl?.id,
+              targetCollectionId: targetCollection.id,
+              error: error instanceof Error ? error.message : error,
+              stack: error instanceof Error ? error.stack : undefined
+            });
           }
         } else {
           console.log('🔄 Handling unsaved tab drop (new URL creation)');

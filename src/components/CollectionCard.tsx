@@ -165,6 +165,19 @@ export function CollectionCard({
   // Get displayed URLs in their current order
   const displayedUrls = (showAllUrls ? collection.urlIds : collection.urlIds.slice(0, DISPLAY_LIMIT));
 
+  // Debug logging for URL display logic (only when there are missing URLs)
+  const missingUrls = displayedUrls.filter(urlId => !urls[urlId]);
+  if (missingUrls.length > 0) {
+    console.log('🔍 CollectionCard with missing URLs:', {
+      collectionName: collection.name,
+      totalUrls: collection.urlIds.length,
+      showAllUrls,
+      displayLimit: DISPLAY_LIMIT,
+      displayedUrlsCount: displayedUrls.length,
+      missingUrls: missingUrls
+    });
+  }
+
   return (
     <div className="rounded-xl border bg-card p-4 shadow-sm hover:shadow-md transition-shadow overflow-hidden">
       <div className="mb-3 flex items-start justify-between">
@@ -238,7 +251,25 @@ export function CollectionCard({
       <div className="space-y-2 mb-3">
         {displayedUrls.map((urlId) => {
           const url = urls[urlId];
-          if (!url) return null;
+          if (!url) {
+            console.warn('⚠️ URL not found in urls record:', {
+              urlId,
+              collectionName: collection.name,
+              availableUrlIds: Object.keys(urls),
+              collectionUrlIds: collection.urlIds
+            });
+            
+            // Render a placeholder for missing URLs instead of returning null
+            return (
+              <div key={urlId} className="flex items-center gap-2 opacity-50">
+                <div className="flex-shrink-0 w-4 h-4 rounded-sm bg-red-200 dark:bg-red-800" />
+                <span className="flex-1 text-sm text-muted-foreground italic">
+                  Missing URL (ID: {urlId.substring(0, 8)}...)
+                </span>
+                <span className="text-xs text-red-600 dark:text-red-400">⚠️</span>
+              </div>
+            );
+          }
           
           const isUrlEditing = editingUrlId === url.id;
           
@@ -348,7 +379,17 @@ export function CollectionCard({
             variant="ghost"
             size="sm"
             className="w-full justify-start text-muted-foreground hover:text-foreground h-auto py-1.5 px-0"
-            onClick={() => setShowAllUrls(!showAllUrls)}
+            onClick={() => {
+              const newShowAllUrls = !showAllUrls;
+              console.log('🔘 Show More/Less button clicked:', {
+                collectionName: collection.name,
+                currentShowAllUrls: showAllUrls,
+                newShowAllUrls,
+                totalUrls: collection.urlIds.length,
+                displayLimit: DISPLAY_LIMIT
+              });
+              setShowAllUrls(newShowAllUrls);
+            }}
           >
             {showAllUrls ? (
               <>
