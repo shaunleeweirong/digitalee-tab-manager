@@ -10,6 +10,7 @@ import type { Collection, SavedURL, SearchResult } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Search, Settings, Plus } from 'lucide-react';
+import { toast } from 'sonner';
 import { OpenTabsSection } from '@/components/OpenTabsSection';
 import { NewCollectionDialog } from '@/components/NewCollectionDialog';
 import { CollectionCard } from '@/components/CollectionCard';
@@ -377,6 +378,11 @@ export default function HomePage() {
       // Refresh recent URLs
       loadRecentUrls();
 
+      // Show success toast
+      toast.success(`Saved "${title}" to "${collection?.name || 'Collection'}"`, {
+        description: `URL added successfully`,
+      });
+
       console.log('✅ handleSaveTab completed successfully:', {
         urlId,
         collectionId,
@@ -391,6 +397,15 @@ export default function HomePage() {
         error: error instanceof Error ? error.message : error,
         stack: error instanceof Error ? error.stack : undefined,
         timestamp: new Date().toISOString()
+      });
+
+      // Show error toast
+      toast.error(`Failed to save "${title}"`, {
+        description: error instanceof Error ? error.message : 'Unknown error occurred',
+        action: {
+          label: 'Retry',
+          onClick: () => handleSaveTab(url, title, collectionId),
+        },
       });
       
       // Try to reload data to ensure consistency
@@ -565,6 +580,11 @@ export default function HomePage() {
       
       // Refresh recent URLs
       loadRecentUrls();
+
+      // Show success toast
+      toast.success(`Saved all ${tabs.length} tabs to "${collectionName}"`, {
+        description: `Collection created successfully in ${duration}ms`,
+      });
       
     } catch (error) {
       const duration = Date.now() - startTime;
@@ -573,6 +593,12 @@ export default function HomePage() {
         tabCount: tabs.length,
         error: error instanceof Error ? error.message : error,
         stack: error instanceof Error ? error.stack : undefined
+      });
+
+      // Show error toast
+      toast.error(`Failed to save ${tabs.length} tabs`, {
+        description: error instanceof Error ? error.message : 'Unknown error occurred',
+        duration: 6000,
       });
       
       // Reload data to ensure UI consistency after failure
@@ -617,8 +643,18 @@ export default function HomePage() {
 
       setCollectionsMap(prev => ({ ...prev, [collectionId]: newCollection }));
       setNewCollectionDialogOpen(false);
+
+      // Show success toast
+      toast.success(`Created collection "${collectionName}"`, {
+        description: 'Ready to add URLs',
+      });
     } catch (error) {
       console.error('Failed to create collection:', error);
+      
+      // Show error toast
+      toast.error(`Failed to create collection "${collectionName}"`, {
+        description: error instanceof Error ? error.message : 'Unknown error occurred',
+      });
     }
   };
 
@@ -692,8 +728,18 @@ export default function HomePage() {
 
       // Refresh recent URLs
       loadRecentUrls();
+
+      // Show success toast
+      toast.success(`Created "${collectionName}" and saved "${title}"`, {
+        description: 'Collection ready for more tabs',
+      });
     } catch (error) {
       console.error('Failed to create collection and save tab:', error);
+      
+      // Show error toast
+      toast.error(`Failed to create collection and save tab`, {
+        description: error instanceof Error ? error.message : 'Unknown error occurred',
+      });
     }
   };
 
@@ -721,8 +767,18 @@ export default function HomePage() {
       }
 
       setCollectionsMap(prev => ({ ...prev, [collectionId]: updatedCollection }));
+
+      // Show success toast
+      toast.success(`Renamed collection to "${newName}"`, {
+        description: `Was "${collection.name}"`,
+      });
     } catch (error) {
       console.error('Failed to rename collection:', error);
+      
+      // Show error toast
+      toast.error('Failed to rename collection', {
+        description: error instanceof Error ? error.message : 'Unknown error occurred',
+      });
     }
   };
 
@@ -761,6 +817,12 @@ export default function HomePage() {
       
       // Update local state
       setUrls(prev => ({ ...prev, [urlId]: updatedURL }));
+
+      // Show success toast
+      const displayName = newCustomName.trim() || url.originalTitle;
+      toast.success(`Renamed URL to "${displayName}"`, {
+        description: newCustomName.trim() ? `Custom name updated` : 'Reset to original title',
+      });
       
       console.log('✅ URL updated successfully:', {
         urlId,
@@ -774,6 +836,11 @@ export default function HomePage() {
         urlId,
         newCustomName,
         error: error instanceof Error ? error.message : error
+      });
+
+      // Show error toast
+      toast.error('Failed to rename URL', {
+        description: error instanceof Error ? error.message : 'Unknown error occurred',
       });
     }
   };
@@ -848,11 +915,21 @@ export default function HomePage() {
       console.log('✅ Collection states updated after URL deletion:', updatedCollectionIds);
 
       console.log('✅ URL deletion completed successfully:', urlId);
+
+      // Show success toast
+      toast.success(`Deleted "${url.customName || url.originalTitle}"`, {
+        description: `Removed from ${url.collectionIds.length} collection${url.collectionIds.length !== 1 ? 's' : ''}`,
+      });
       
     } catch (error) {
       console.error('❌ Failed to delete URL:', {
         urlId,
         error: error instanceof Error ? error.message : error
+      });
+
+      // Show error toast
+      toast.error('Failed to delete URL', {
+        description: error instanceof Error ? error.message : 'Unknown error occurred',
       });
     }
   };
@@ -899,8 +976,18 @@ export default function HomePage() {
       );
 
       setDeleteCollectionDialog({ open: false, collection: null });
+
+      // Show success toast
+      toast.success(`Deleted collection "${collection.name}"`, {
+        description: `${collection.urlIds.length} URLs removed`,
+      });
     } catch (error) {
       console.error('Failed to delete collection:', error);
+
+      // Show error toast
+      toast.error(`Failed to delete collection "${collection.name}"`, {
+        description: error instanceof Error ? error.message : 'Unknown error occurred',
+      });
     }
   };
 
