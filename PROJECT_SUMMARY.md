@@ -629,29 +629,38 @@ Dark mode:  #0A0A0A background, #FAFAFA text, #60A5FA accent
   - Real-time search index synchronization for immediate searchability ✅
 
 ### Immediate High Priority (Next 1-2 weeks)
-1. **Collection Detail View** - Enhanced collection browsing
-   - Click collections to browse all saved URLs
-   - Pagination for large collections
-   - Bulk URL operations
-2. **Toast Notifications** - User feedback system
+1. **Toast Notifications** - User feedback system
    - Success messages for saves/deletes
    - Error handling UI
    - Undo system integration
-
-### Medium Priority (Weeks 3-4)
-1. **Settings Dialog** - User preferences
+2. **Settings Dialog** - User preferences
    - Theme settings
    - Search preferences
    - Import/export options
-2. **Enhanced URL Operations** - Advanced functionality
+
+### Medium Priority (Weeks 3-4)
+1. **Enhanced URL Operations** - Advanced functionality
    - URL aliases support
    - Bulk URL operations
    - URL tagging system
+2. **Popup functionality** - Quick-save from extension icon
+   - Save current tab with collection selection
+   - Quick access to recent collections
+   - Mini search interface
 
 ### Lower Priority (Future)
-1. **Popup functionality** - Quick-save from extension icon
-2. **Keyboard shortcuts** - Cmd+K search, navigation shortcuts
-3. **Performance optimization** - Web workers for large datasets
+1. **Keyboard shortcuts** - Cmd+K search, navigation shortcuts
+2. **Performance optimization** - Web workers for large datasets
+3. **Advanced Features** - Import/export, cross-device sync
+
+### Optional/Enhancement Features
+1. **Collection Detail View** - Enhanced collection browsing (optional)
+   - Dedicated full-page view for individual collections
+   - Click collections to browse all saved URLs in detail
+   - Pagination for large collections (100+ URLs)
+   - Bulk URL operations and selection
+   - Enhanced filtering and sorting within collections
+   - *Note: Current "Show More/Less" functionality in collection cards may be sufficient for most users*
 
 ---
 
@@ -741,4 +750,4 @@ The implementation follows the PRD closely while making informed technical decis
 
 ---
 
-**Status**: Search Implementation Complete ✅ | Ready for Collection Detail View 📁
+**Status**: Search Implementation Complete ✅ | Ready for Toast Notifications & Settings 🔔
