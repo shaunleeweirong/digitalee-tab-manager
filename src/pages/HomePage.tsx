@@ -340,6 +340,20 @@ export default function HomePage() {
         throw new Error(`Collection save failed: ${collectionSaveError instanceof Error ? collectionSaveError.message : collectionSaveError}`);
       }
 
+      // Update search index
+      try {
+        console.log('🔍 Updating search index for new URL...');
+        await searchService.addURL(newUrl, collectionsMap);
+        console.log('✅ Search index updated successfully for URL:', urlId);
+      } catch (searchIndexError) {
+        console.error('❌ Failed to update search index (continuing with save):', {
+          urlId,
+          error: searchIndexError instanceof Error ? searchIndexError.message : searchIndexError,
+          stack: searchIndexError instanceof Error ? searchIndexError.stack : undefined
+        });
+        // Don't throw - continue with save even if search index update fails
+      }
+
       // Update state
       setUrls(prev => {
         const updated = { ...prev, [urlId]: newUrl };
@@ -359,6 +373,9 @@ export default function HomePage() {
         });
         return updated;
       });
+
+      // Refresh recent URLs
+      loadRecentUrls();
 
       console.log('✅ handleSaveTab completed successfully:', {
         urlId,
@@ -507,6 +524,32 @@ export default function HomePage() {
         throw new Error(`Atomic operation failed: Collection save failed: ${error instanceof Error ? error.message : error}`);
       }
 
+      // STEP 3: Update search index for all new content
+      try {
+        console.log(`🔍 [${operationId}] STEP 3: Updating search index for collection and ${savedUrls.length} URLs...`);
+        const updatedCollectionsMap = { ...collectionsMap, [collectionId]: newCollection };
+        
+        // Add collection to search index
+        await searchService.addCollection(newCollection);
+        console.log(`✅ [${operationId}] Collection added to search index`);
+        
+        // Add all URLs to search index
+        for (const urlId of savedUrls) {
+          const savedUrl = newUrls[urlId];
+          if (savedUrl) {
+            await searchService.addURL(savedUrl, updatedCollectionsMap);
+          }
+        }
+        console.log(`✅ [${operationId}] All ${savedUrls.length} URLs added to search index`);
+        
+      } catch (searchIndexError) {
+        console.error(`❌ [${operationId}] Failed to update search index (continuing with save):`, {
+          error: searchIndexError instanceof Error ? searchIndexError.message : searchIndexError,
+          stack: searchIndexError instanceof Error ? searchIndexError.stack : undefined
+        });
+        // Don't throw - search index failure shouldn't break the atomic save operation
+      }
+
       const duration = Date.now() - startTime;
       console.log(`🎉 [${operationId}] ATOMIC SAVE ALL TABS COMPLETED SUCCESSFULLY (${duration}ms):`, {
         collectionId,
@@ -519,6 +562,9 @@ export default function HomePage() {
       // Update state
       setCollectionsMap(prev => ({ ...prev, [collectionId]: newCollection }));
       setUrls(prev => ({ ...prev, ...newUrls }));
+      
+      // Refresh recent URLs
+      loadRecentUrls();
       
     } catch (error) {
       const duration = Date.now() - startTime;
@@ -558,6 +604,16 @@ export default function HomePage() {
       };
 
       await storage.saveCollection(newCollection);
+
+      // Update search index
+      try {
+        console.log('🔍 Updating search index for new collection...');
+        await searchService.addCollection(newCollection);
+        console.log('✅ Search index updated successfully for new collection:', collectionId);
+      } catch (searchIndexError) {
+        console.error('❌ Failed to update search index (continuing with save):', searchIndexError);
+        // Don't throw - continue with save even if search index update fails
+      }
 
       setCollectionsMap(prev => ({ ...prev, [collectionId]: newCollection }));
       setNewCollectionDialogOpen(false);
@@ -616,9 +672,26 @@ export default function HomePage() {
         storage.saveURL(newUrl),
       ]);
 
+      // Update search index
+      try {
+        console.log('🔍 Updating search index for new collection and URL...');
+        const updatedCollectionsMap = { ...collectionsMap, [collectionId]: newCollection };
+        await Promise.all([
+          searchService.addCollection(newCollection),
+          searchService.addURL(newUrl, updatedCollectionsMap),
+        ]);
+        console.log('✅ Search index updated successfully for new collection and URL');
+      } catch (searchIndexError) {
+        console.error('❌ Failed to update search index (continuing with save):', searchIndexError);
+        // Don't throw - continue with save even if search index update fails
+      }
+
       // Update state
       setCollectionsMap(prev => ({ ...prev, [collectionId]: newCollection }));
       setUrls(prev => ({ ...prev, [urlId]: newUrl }));
+
+      // Refresh recent URLs
+      loadRecentUrls();
     } catch (error) {
       console.error('Failed to create collection and save tab:', error);
     }
@@ -636,6 +709,17 @@ export default function HomePage() {
       };
 
       await storage.saveCollection(updatedCollection);
+
+      // Update search index
+      try {
+        console.log('🔍 Updating search index for renamed collection...');
+        await searchService.updateCollection(updatedCollection);
+        console.log('✅ Search index updated successfully for renamed collection:', collectionId);
+      } catch (searchIndexError) {
+        console.error('❌ Failed to update search index (continuing with save):', searchIndexError);
+        // Don't throw - continue with save even if search index update fails
+      }
+
       setCollectionsMap(prev => ({ ...prev, [collectionId]: updatedCollection }));
     } catch (error) {
       console.error('Failed to rename collection:', error);
@@ -664,6 +748,16 @@ export default function HomePage() {
 
       // Save to storage
       await storage.saveURL(updatedURL);
+      
+      // Update search index
+      try {
+        console.log('🔍 Updating search index for updated URL...');
+        await searchService.updateURL(updatedURL, collectionsMap);
+        console.log('✅ Search index updated successfully for updated URL:', urlId);
+      } catch (searchIndexError) {
+        console.error('❌ Failed to update search index (continuing with save):', searchIndexError);
+        // Don't throw - continue with save even if search index update fails
+      }
       
       // Update local state
       setUrls(prev => ({ ...prev, [urlId]: updatedURL }));
@@ -777,6 +871,16 @@ export default function HomePage() {
 
     try {
       await storage.deleteCollection(collection.id);
+      
+      // Update search index
+      try {
+        console.log('🔍 Updating search index for deleted collection...');
+        await searchService.removeCollection(collection.id);
+        console.log('✅ Search index updated successfully for deleted collection:', collection.id);
+      } catch (searchIndexError) {
+        console.error('❌ Failed to update search index (continuing with delete):', searchIndexError);
+        // Don't throw - continue with delete even if search index update fails
+      }
       
       // Remove from state
       setCollectionsMap(prev => {
