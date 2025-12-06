@@ -3,10 +3,10 @@
  * Displays search bar, Save All Tabs button, sidebar with open tabs, and collections grid
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { storage } from '@/lib/storage';
 import { searchService } from '@/lib/search';
-import type { Collection, SavedURL } from '@/types';
+import type { Collection, SavedURL, SearchResult } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Search, Settings, Plus } from 'lucide-react';
@@ -15,7 +15,8 @@ import { NewCollectionDialog } from '@/components/NewCollectionDialog';
 import { CollectionCard } from '@/components/CollectionCard';
 import { CollectionDropZone } from '@/components/CollectionDropZone';
 import { DeleteCollectionDialog } from '@/components/DeleteCollectionDialog';
-import { generateId, getFaviconUrl } from '@/lib/utils';
+import { SearchResults } from '@/components/SearchResults';
+import { generateId, getFaviconUrl, debounce } from '@/lib/utils';
 import {
   DndContext,
   DragEndEvent,
@@ -34,6 +35,9 @@ export default function HomePage() {
   const [collectionsMap, setCollectionsMap] = useState<Record<string, Collection>>({});
   const [urls, setUrls] = useState<Record<string, SavedURL>>({});
   const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [recentUrls, setRecentUrls] = useState<SearchResult[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [newCollectionDialogOpen, setNewCollectionDialogOpen] = useState(false);
@@ -157,6 +161,9 @@ export default function HomePage() {
       await searchService.initialize();
       console.log('✅ Search service initialized');
       
+      // Load recent URLs for search
+      await loadRecentUrls();
+      
     } catch (error) {
       console.error('❌ Failed to load data:', {
         error: error instanceof Error ? error.message : error,
@@ -166,6 +173,74 @@ export default function HomePage() {
       setIsLoading(false);
     }
   };
+
+  // Load recent URLs for empty search state
+  const loadRecentUrls = async () => {
+    try {
+      console.log('🔍 Loading recent URLs for search...');
+      const recent = await searchService.getRecentURLs(5);
+      setRecentUrls(recent);
+      console.log('✅ Recent URLs loaded:', recent.length);
+    } catch (error) {
+      console.error('❌ Failed to load recent URLs:', error);
+    }
+  };
+
+  // Debounced search function
+  const performSearch = async (query: string) => {
+    if (!query.trim()) {
+      setSearchResults([]);
+      setIsSearching(false);
+      return;
+    }
+
+    setIsSearching(true);
+    try {
+      console.log('🔍 Performing search for:', query);
+      const results = await searchService.search(query, 50);
+      setSearchResults(results);
+      console.log('✅ Search completed:', results.length, 'results');
+    } catch (error) {
+      console.error('❌ Search failed:', error);
+      setSearchResults([]);
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  // Debounced search handler
+  const debouncedSearch = useCallback(
+    debounce((...args: unknown[]) => {
+      const [query] = args;
+      if (typeof query === 'string') {
+        performSearch(query);
+      }
+    }, 300),
+    []
+  );
+
+  // Handle search query changes
+  useEffect(() => {
+    debouncedSearch(searchQuery);
+  }, [searchQuery, debouncedSearch]);
+
+  // Search result handlers
+  const handleOpenURL = useCallback((url: string) => {
+    console.log('🔗 Opening URL:', url);
+    chrome.tabs.create({ url, active: true });
+  }, []);
+
+  const handleNavigateToCollection = useCallback((collectionId: string) => {
+    console.log('📁 Navigating to collection:', collectionId);
+    // Clear search to show collections view
+    setSearchQuery('');
+    setSearchResults([]);
+    // Scroll to collection (you could add this functionality later)
+    const collectionElement = document.getElementById(`collection-${collectionId}`);
+    if (collectionElement) {
+      collectionElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, []);
 
   const handleSaveTab = async (url: string, title: string, collectionId: string) => {
     console.log('💾 Starting handleSaveTab:', {
@@ -1022,47 +1097,63 @@ export default function HomePage() {
           </div>
         </header>
 
-        {/* Collections Content */}
+        {/* Main Content - Search Results or Collections */}
         <div className="flex-1 overflow-y-auto p-6">
-          {/* Collections Header */}
-          <div className="mb-6 flex items-center justify-between">
-            <h2 className="text-lg font-semibold">Collections</h2>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setNewCollectionDialogOpen(true)}
-            >
-              <Plus className="mr-2 h-4 w-4" />
-              New Collection
-            </Button>
-          </div>
+          {searchQuery.trim() || searchResults.length > 0 || isSearching ? (
+            /* Search Results View */
+            <SearchResults
+              query={searchQuery}
+              results={searchResults}
+              recentUrls={recentUrls}
+              isSearching={isSearching}
+              onOpenURL={handleOpenURL}
+              onNavigateToCollection={handleNavigateToCollection}
+            />
+          ) : (
+            /* Collections View */
+            <>
+              {/* Collections Header */}
+              <div className="mb-6 flex items-center justify-between">
+                <h2 className="text-lg font-semibold">Collections</h2>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setNewCollectionDialogOpen(true)}
+                >
+                  <Plus className="mr-2 h-4 w-4" />
+                  New Collection
+                </Button>
+              </div>
 
-          {/* Empty state */}
-          {collections.length === 0 && (
-            <div className="flex flex-col items-center justify-center py-24 text-center">
-              <div className="mb-2 text-4xl">📁</div>
-              <h2 className="mb-2 text-xl font-semibold">No collections yet</h2>
-              <p className="text-muted-foreground">
-                Save your open tabs from the sidebar to create your first collection.
-              </p>
-            </div>
-          )}
+              {/* Empty state */}
+              {collections.length === 0 && (
+                <div className="flex flex-col items-center justify-center py-24 text-center">
+                  <div className="mb-2 text-4xl">📁</div>
+                  <h2 className="mb-2 text-xl font-semibold">No collections yet</h2>
+                  <p className="text-muted-foreground">
+                    Save your open tabs from the sidebar to create your first collection.
+                  </p>
+                </div>
+              )}
 
-          {/* Collections grid */}
-          {collections.length > 0 && (
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
-              {collections.map((collection) => (
-                <CollectionDropZone
-                  key={collection.id}
-                  collection={collection}
-                  urls={urls}
-                  onRename={handleRenameCollection}
-                  onDelete={handleDeleteCollection}
-                  onUpdateURL={handleUpdateURL}
-                  onDeleteURL={handleDeleteURL}
-                />
-              ))}
-            </div>
+              {/* Collections grid */}
+              {collections.length > 0 && (
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+                  {collections.map((collection) => (
+                    <div key={collection.id} id={`collection-${collection.id}`}>
+                      <CollectionDropZone
+                        collection={collection}
+                        urls={urls}
+                        onRename={handleRenameCollection}
+                        onDelete={handleDeleteCollection}
+                        onUpdateURL={handleUpdateURL}
+                        onDeleteURL={handleDeleteURL}
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>
