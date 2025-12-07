@@ -845,8 +845,8 @@ export default function HomePage() {
     }
   };
 
-  const handleDeleteURL = async (urlId: string) => {
-    console.log('🗑️ Starting URL deletion process:', urlId);
+  const handleDeleteURL = async (urlId: string, collectionId: string) => {
+    console.log('🗑️ Starting smart URL deletion process:', { urlId, collectionId });
     
     try {
       // Get URL details for logging before deletion
@@ -856,74 +856,150 @@ export default function HomePage() {
         return;
       }
 
-      console.log('🗑️ Deleting URL:', {
+      console.log('🗑️ Smart deletion analysis:', {
         urlId,
-        collectionIds: url.collectionIds,
+        collectionId,
+        currentCollections: url.collectionIds,
+        totalCollections: url.collectionIds.length,
         title: url.originalTitle,
         customName: url.customName,
         url: url.url
       });
 
-      // Delete from storage (this also updates the collection's urlIds)
-      await storage.deleteURL(urlId);
-      console.log('✅ URL deleted from storage:', urlId);
-
-      // Remove from search index (with specific error handling)
-      try {
-        if (searchService) {
-          console.log('🔍 Attempting to remove URL from search index:', urlId);
-          console.log('🔍 Search service state:', {
-            exists: !!searchService,
-            isInitialized: searchService.initialized
-          });
-          
-          await searchService.removeURL(urlId);
-          console.log('✅ URL removed from search index successfully:', urlId);
-        } else {
-          console.log('⚠️ Search service not available, skipping search index removal for URL:', urlId);
-        }
-      } catch (searchError) {
-        console.error('❌ Failed to remove URL from search index (continuing with deletion):', {
+      // Determine smart deletion strategy
+      const isInMultipleCollections = url.collectionIds.length > 1;
+      const isInSpecificCollection = url.collectionIds.includes(collectionId);
+      
+      if (!isInSpecificCollection) {
+        console.warn('⚠️ URL is not in the specified collection, skipping deletion:', {
           urlId,
-          searchError: searchError instanceof Error ? searchError.message : searchError,
-          stack: searchError instanceof Error ? searchError.stack : undefined
+          collectionId,
+          currentCollections: url.collectionIds
         });
-        // Don't throw - continue with the deletion even if search index update fails
+        toast.warning('URL not found in collection', {
+          description: 'This URL is not in the specified collection',
+        });
+        return;
       }
 
-      // Update local state - remove from urls
-      setUrls(prev => {
-        const updated = { ...prev };
-        delete updated[urlId];
-        return updated;
-      });
+      let deletionStrategy: 'remove-from-collection' | 'delete-completely';
+      let affectedCollections: string[];
+
+      if (isInMultipleCollections) {
+        // URL exists in multiple collections - remove from specific collection only
+        deletionStrategy = 'remove-from-collection';
+        affectedCollections = [collectionId];
+        
+        console.log('🔄 Strategy: Remove from collection (multi-collection URL):', {
+          urlId,
+          removeFromCollection: collectionId,
+          remainingCollections: url.collectionIds.filter(id => id !== collectionId)
+        });
+        
+        // Use removeURLFromCollection for multi-collection scenarios
+        await storage.removeURLFromCollection(urlId, collectionId);
+        
+      } else {
+        // URL exists in only one collection - delete completely
+        deletionStrategy = 'delete-completely';
+        affectedCollections = url.collectionIds;
+        
+        console.log('🗑️ Strategy: Delete completely (single-collection URL):', {
+          urlId,
+          onlyCollection: collectionId
+        });
+        
+        // Use deleteURL for single-collection scenarios
+        await storage.deleteURL(urlId);
+      }
+
+      console.log(`✅ URL ${deletionStrategy} operation completed in storage:`, urlId);
+
+      // Remove from search index (with specific error handling)
+      if (deletionStrategy === 'delete-completely') {
+        try {
+          if (searchService) {
+            console.log('🔍 Removing URL from search index (complete deletion):', urlId);
+            await searchService.removeURL(urlId);
+            console.log('✅ URL removed from search index successfully:', urlId);
+          } else {
+            console.log('⚠️ Search service not available, skipping search index removal for URL:', urlId);
+          }
+        } catch (searchError) {
+          console.error('❌ Failed to remove URL from search index (continuing with deletion):', {
+            urlId,
+            searchError: searchError instanceof Error ? searchError.message : searchError,
+            stack: searchError instanceof Error ? searchError.stack : undefined
+          });
+          // Don't throw - continue with the deletion even if search index update fails
+        }
+      }
+
+      // Update local state based on deletion strategy
+      if (deletionStrategy === 'delete-completely') {
+        // Remove URL completely from state
+        setUrls(prev => {
+          const updated = { ...prev };
+          delete updated[urlId];
+          return updated;
+        });
+      } else {
+        // Update URL to remove collection ID
+        setUrls(prev => {
+          const updated = { ...prev };
+          if (updated[urlId]) {
+            updated[urlId] = {
+              ...updated[urlId],
+              collectionIds: updated[urlId].collectionIds.filter(id => id !== collectionId)
+            };
+          }
+          return updated;
+        });
+      }
       
-      // Update collection states - the storage service already updates collections,
-      // but we need to refresh our local collection states for all affected collections
-      const updatePromises = url.collectionIds.map(async (collectionId) => {
-        const updatedCollection = await storage.getCollection(collectionId);
+      // Update collection states for all affected collections
+      const updatePromises = affectedCollections.map(async (affectedCollectionId) => {
+        const updatedCollection = await storage.getCollection(affectedCollectionId);
         if (updatedCollection) {
           setCollectionsMap(prev => ({
             ...prev,
-            [collectionId]: updatedCollection
+            [affectedCollectionId]: updatedCollection
           }));
+          console.log(`✅ Updated collection state: ${updatedCollection.name}`);
+        } else if (deletionStrategy === 'delete-completely') {
+          // Collection might have been deleted if it was empty
+          console.log(`⚠️ Collection ${affectedCollectionId} not found - might have been auto-deleted`);
         }
-        return collectionId;
+        return affectedCollectionId;
       });
       
       const updatedCollectionIds = await Promise.all(updatePromises);
       console.log('✅ Collection states updated after URL deletion:', updatedCollectionIds);
 
-      console.log('✅ URL deletion completed successfully:', urlId);
-
-      // Show success toast
-      toast.success(`Deleted "${url.customName || url.originalTitle}"`, {
-        description: `Removed from ${url.collectionIds.length} collection${url.collectionIds.length !== 1 ? 's' : ''}`,
+      console.log('✅ Smart URL deletion completed successfully:', {
+        urlId,
+        strategy: deletionStrategy,
+        affectedCollections
       });
+
+      // Show appropriate success message
+      const collection = collectionsMap[collectionId];
+      const collectionName = collection?.name || 'Collection';
+      
+      if (deletionStrategy === 'remove-from-collection') {
+        toast.success(`Removed "${url.customName || url.originalTitle}" from "${collectionName}"`, {
+          description: `URL remains in ${url.collectionIds.length - 1} other collection${url.collectionIds.length - 1 !== 1 ? 's' : ''}`,
+        });
+      } else {
+        toast.success(`Deleted "${url.customName || url.originalTitle}"`, {
+          description: `Completely removed from all collections`,
+        });
+      }
       
     } catch (error) {
       console.error('❌ Failed to delete URL:', {
         urlId,
+        collectionId,
         error: error instanceof Error ? error.message : error
       });
 

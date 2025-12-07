@@ -11,7 +11,7 @@ interface CollectionDropZoneProps {
   onRename: (collectionId: string, newName: string) => void;
   onDelete: (collectionId: string) => void;
   onUpdateURL: (urlId: string, newCustomName: string) => void;
-  onDeleteURL: (urlId: string) => void;
+  onDeleteURL: (urlId: string, collectionId: string) => void;
 }
 
 export function CollectionDropZone({ collection, urls, onRename, onDelete, onUpdateURL, onDeleteURL }: CollectionDropZoneProps) {

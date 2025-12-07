@@ -24,6 +24,7 @@ import { CSS } from '@dnd-kit/utilities';
 
 interface SortableURLItemProps {
   url: SavedURL;
+  collectionId: string;
   editingUrlId: string | null;
   editUrlName: string;
   onStartEdit: (url: SavedURL, e: React.MouseEvent) => void;
@@ -31,12 +32,13 @@ interface SortableURLItemProps {
   onCancelEdit: () => void;
   onEditKeyDown: (e: React.KeyboardEvent) => void;
   onUrlClick: (url: SavedURL) => void;
-  onDeleteUrl: (url: SavedURL, e: React.MouseEvent) => void;
+  onDeleteUrl: (url: SavedURL, collectionId: string, e: React.MouseEvent) => void;
   setEditUrlName: (name: string) => void;
 }
 
 function SortableURLItem({ 
   url, 
+  collectionId,
   editingUrlId, 
   editUrlName, 
   onStartEdit, 
@@ -168,7 +170,7 @@ function SortableURLItem({
             variant="ghost"
             size="sm"
             className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 hover:bg-destructive/20 hover:text-destructive transition-all duration-200 flex-shrink-0 rounded-md"
-            onClick={(e) => onDeleteUrl(url, e)}
+            onClick={(e) => onDeleteUrl(url, collectionId, e)}
             title="Delete URL"
             onPointerDown={(e) => e.stopPropagation()}
           >
@@ -186,7 +188,7 @@ interface CollectionCardProps {
   onRename: (collectionId: string, newName: string) => void;
   onDelete: (collectionId: string) => void;
   onUpdateURL: (urlId: string, newCustomName: string) => void;
-  onDeleteURL: (urlId: string) => void;
+  onDeleteURL: (urlId: string, collectionId: string) => void;
 }
 
 export function CollectionCard({ 
@@ -304,11 +306,13 @@ export function CollectionCard({
     }
   };
 
-  const handleDeleteUrl = (url: SavedURL, e: React.MouseEvent) => {
+  const handleDeleteUrl = (url: SavedURL, collectionId: string, e: React.MouseEvent) => {
     e.stopPropagation(); // Prevent URL click
     
     console.log('🗑️ Delete button clicked for URL:', {
       urlId: url.id,
+      collectionId,
+      collectionName: collection.name,
       collectionIds: url.collectionIds,
       title: url.originalTitle,
       customName: url.customName,
@@ -316,11 +320,12 @@ export function CollectionCard({
     });
 
     try {
-      onDeleteURL(url.id);
-      console.log('✅ Delete handler called for URL:', url.id);
+      onDeleteURL(url.id, collectionId);
+      console.log('✅ Delete handler called for URL:', url.id, 'from collection:', collectionId);
     } catch (error) {
       console.error('❌ Failed to call delete handler:', {
         urlId: url.id,
+        collectionId,
         error: error instanceof Error ? error.message : error
       });
     }
@@ -443,6 +448,7 @@ export function CollectionCard({
               <SortableURLItem
                 key={urlId}
                 url={url}
+                collectionId={collection.id}
                 editingUrlId={editingUrlId}
                 editUrlName={editUrlName}
                 onStartEdit={handleStartUrlEdit}
