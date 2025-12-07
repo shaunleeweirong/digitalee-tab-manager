@@ -910,6 +910,97 @@ class StorageService {
 
     return report;
   }
+
+  /**
+   * Reorder URLs within a collection
+   * Updates the collection's urlIds array to match the new order
+   */
+  async reorderURLsInCollection(collectionId: string, orderedUrlIds: string[]): Promise<void> {
+    const operationId = `reorderURLs-${Date.now()}-${collectionId.substring(0, 8)}`;
+    const startTime = Date.now();
+    
+    console.log(`🔄 [${operationId}] Starting URL reordering in collection:`, {
+      collectionId,
+      newUrlCount: orderedUrlIds.length,
+      newOrder: orderedUrlIds.slice(0, 3).map(id => id.substring(0, 8)).join(', ') + 
+                (orderedUrlIds.length > 3 ? `, ...${orderedUrlIds.length - 3} more` : '')
+    });
+
+    try {
+      // Get the collection
+      const collection = await this.getCollection(collectionId);
+      
+      if (!collection) {
+        const errorMsg = `Collection not found: ${collectionId}`;
+        console.error(`❌ [${operationId}] ${errorMsg}`);
+        throw new Error(errorMsg);
+      }
+
+      console.log(`✅ [${operationId}] Collection found:`, {
+        name: collection.name,
+        currentUrlCount: collection.urlIds.length,
+        currentOrder: collection.urlIds.slice(0, 3).map(id => id.substring(0, 8)).join(', ') +
+                     (collection.urlIds.length > 3 ? `, ...${collection.urlIds.length - 3} more` : '')
+      });
+
+      // Validate that all provided URL IDs exist in the current collection
+      const currentUrlIds = new Set(collection.urlIds);
+      const providedUrlIds = new Set(orderedUrlIds);
+      
+      // Check for missing URLs (in current but not in provided order)
+      const missingUrls = collection.urlIds.filter(id => !providedUrlIds.has(id));
+      if (missingUrls.length > 0) {
+        const errorMsg = `Missing URLs in new order: ${missingUrls.slice(0, 3).join(', ')}${missingUrls.length > 3 ? ` ...${missingUrls.length - 3} more` : ''}`;
+        console.error(`❌ [${operationId}] ${errorMsg}`);
+        throw new Error(errorMsg);
+      }
+
+      // Check for extra URLs (in provided but not in current)
+      const extraUrls = orderedUrlIds.filter(id => !currentUrlIds.has(id));
+      if (extraUrls.length > 0) {
+        const errorMsg = `Extra URLs in new order: ${extraUrls.slice(0, 3).join(', ')}${extraUrls.length > 3 ? ` ...${extraUrls.length - 3} more` : ''}`;
+        console.error(`❌ [${operationId}] ${errorMsg}`);
+        throw new Error(errorMsg);
+      }
+
+      // Check if order actually changed
+      const orderChanged = collection.urlIds.some((id, index) => id !== orderedUrlIds[index]);
+      if (!orderChanged) {
+        console.log(`⚠️ [${operationId}] URL order unchanged, skipping save`);
+        return;
+      }
+
+      console.log(`🔄 [${operationId}] Updating collection URL order...`);
+
+      // Update the collection's URL order
+      const updatedCollection = {
+        ...collection,
+        urlIds: [...orderedUrlIds], // Create a copy of the new order
+        updatedAt: Date.now(),
+      };
+
+      // Save the updated collection
+      await this.saveCollection(updatedCollection);
+
+      const duration = Date.now() - startTime;
+      console.log(`✅ [${operationId}] URL reordering completed successfully (${duration}ms):`, {
+        collectionId,
+        collectionName: collection.name,
+        urlCount: orderedUrlIds.length,
+        duration
+      });
+
+    } catch (error) {
+      const duration = Date.now() - startTime;
+      console.error(`❌ [${operationId}] URL reordering failed (${duration}ms):`, {
+        collectionId,
+        urlCount: orderedUrlIds.length,
+        error: error instanceof Error ? error.message : error,
+        stack: error instanceof Error ? error.stack : undefined
+      });
+      throw error;
+    }
+  }
 }
 
 // Export singleton instance

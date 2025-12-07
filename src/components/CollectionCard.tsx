@@ -14,7 +14,171 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { MoreVertical, Edit2, Trash2, Check, X, ChevronDown } from 'lucide-react';
+import { MoreVertical, Edit2, Trash2, Check, X, ChevronDown, GripVertical } from 'lucide-react';
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+
+interface SortableURLItemProps {
+  url: SavedURL;
+  editingUrlId: string | null;
+  editUrlName: string;
+  onStartEdit: (url: SavedURL, e: React.MouseEvent) => void;
+  onSaveEdit: () => void;
+  onCancelEdit: () => void;
+  onEditKeyDown: (e: React.KeyboardEvent) => void;
+  onUrlClick: (url: SavedURL) => void;
+  onDeleteUrl: (url: SavedURL, e: React.MouseEvent) => void;
+  setEditUrlName: (name: string) => void;
+}
+
+function SortableURLItem({ 
+  url, 
+  editingUrlId, 
+  editUrlName, 
+  onStartEdit, 
+  onSaveEdit, 
+  onCancelEdit, 
+  onEditKeyDown, 
+  onUrlClick, 
+  onDeleteUrl,
+  setEditUrlName
+}: SortableURLItemProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({
+    id: url.id,
+  });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  const isUrlEditing = editingUrlId === url.id;
+
+  return (
+    <div 
+      ref={setNodeRef} 
+      style={style} 
+      className="flex items-center gap-2 group"
+    >
+      {/* Drag Handle */}
+      <div
+        {...attributes}
+        {...listeners}
+        className="opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing flex-shrink-0"
+        title="Drag to reorder"
+      >
+        <GripVertical className="h-3 w-3 text-muted-foreground" />
+      </div>
+
+      {/* Favicon */}
+      <div className="flex-shrink-0 relative w-4 h-4">
+        {url.favicon ? (
+          <>
+            <img
+              src={url.favicon}
+              alt=""
+              className="h-4 w-4 absolute top-0 left-0"
+              onLoad={(e) => {
+                const fallback = (e.target as HTMLImageElement).nextElementSibling as HTMLElement;
+                if (fallback) fallback.style.display = 'none';
+              }}
+              onError={(e) => {
+                (e.target as HTMLImageElement).style.display = 'none';
+                const fallback = (e.target as HTMLImageElement).nextElementSibling as HTMLElement;
+                if (fallback) fallback.style.display = 'block';
+              }}
+              loading="lazy"
+            />
+            <div className="h-4 w-4 rounded-sm bg-muted absolute top-0 left-0" style={{ backgroundColor: 'hsl(var(--muted))' }} />
+          </>
+        ) : (
+          <div className="h-4 w-4 rounded-sm bg-muted" style={{ backgroundColor: 'hsl(var(--muted))' }} />
+        )}
+      </div>
+
+      {isUrlEditing ? (
+        // Edit mode
+        <div className="flex-1 flex items-center gap-2">
+          <Input
+            value={editUrlName}
+            onChange={(e) => setEditUrlName(e.target.value)}
+            onKeyDown={onEditKeyDown}
+            className="h-7 text-sm flex-1"
+            placeholder={url.originalTitle}
+            autoFocus
+            onPointerDown={(e) => e.stopPropagation()}
+          />
+          <Button
+            size="sm"
+            onClick={onSaveEdit}
+            disabled={!editUrlName.trim()}
+            className="h-7 w-7 p-0"
+            onPointerDown={(e) => e.stopPropagation()}
+          >
+            <Check className="h-3 w-3" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onCancelEdit}
+            className="h-7 w-7 p-0"
+            onPointerDown={(e) => e.stopPropagation()}
+          >
+            <X className="h-3 w-3" />
+          </Button>
+        </div>
+      ) : (
+        // View mode
+        <div className="flex-1 flex items-center gap-2 min-w-0">
+          {/* Text container with proper flex shrinking */}
+          <span
+            className="flex-1 truncate text-base text-muted-foreground hover:text-foreground cursor-pointer min-w-0"
+            onClick={() => onUrlClick(url)}
+            title={`Click to open: ${url.url}`}
+          >
+            {url.customName || url.originalTitle}
+          </span>
+
+          {/* Edit button */}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 hover:bg-muted/50 transition-all duration-200 flex-shrink-0 rounded-md"
+            onClick={(e) => onStartEdit(url, e)}
+            title="Edit name"
+            onPointerDown={(e) => e.stopPropagation()}
+          >
+            <Edit2 className="h-3 w-3" />
+          </Button>
+
+          {/* Delete button */}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 hover:bg-destructive/20 hover:text-destructive transition-all duration-200 flex-shrink-0 rounded-md"
+            onClick={(e) => onDeleteUrl(url, e)}
+            title="Delete URL"
+            onPointerDown={(e) => e.stopPropagation()}
+          >
+            <Trash2 className="h-3 w-3" />
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 interface CollectionCardProps {
   collection: Collection;
@@ -248,163 +412,83 @@ export function CollectionCard({
         )}
       </div>
       
-      <div className="space-y-2 mb-3">
-        {displayedUrls.map((urlId) => {
-          const url = urls[urlId];
-          if (!url) {
-            console.warn('⚠️ URL not found in urls record:', {
-              urlId,
-              collectionName: collection.name,
-              availableUrlIds: Object.keys(urls),
-              collectionUrlIds: collection.urlIds
-            });
-            
-            // Render a placeholder for missing URLs instead of returning null
-            return (
-              <div key={urlId} className="flex items-center gap-2 opacity-50">
-                <div className="flex-shrink-0 w-4 h-4 rounded-sm bg-red-200 dark:bg-red-800" />
-                <span className="flex-1 text-sm text-muted-foreground italic">
-                  Missing URL (ID: {urlId.substring(0, 8)}...)
-                </span>
-                <span className="text-xs text-red-600 dark:text-red-400">⚠️</span>
-              </div>
-            );
-          }
-          
-          const isUrlEditing = editingUrlId === url.id;
-          
-          return (
-            <div key={urlId} className="flex items-center gap-2">
-              {/* Favicon */}
-              <div className="flex-shrink-0 relative w-4 h-4">
-                {url.favicon ? (
-                  <>
-                    <img
-                      src={url.favicon}
-                      alt=""
-                      className="h-4 w-4 absolute top-0 left-0"
-                      onLoad={(e) => {
-                        const fallback = (e.target as HTMLImageElement).nextElementSibling as HTMLElement;
-                        if (fallback) fallback.style.display = 'none';
-                      }}
-                      onError={(e) => {
-                        (e.target as HTMLImageElement).style.display = 'none';
-                        const fallback = (e.target as HTMLImageElement).nextElementSibling as HTMLElement;
-                        if (fallback) fallback.style.display = 'block';
-                      }}
-                      loading="lazy"
-                    />
-                    <div className="h-4 w-4 rounded-sm bg-muted absolute top-0 left-0" style={{ backgroundColor: 'hsl(var(--muted))' }} />
-                  </>
-                ) : (
-                  <div className="h-4 w-4 rounded-sm bg-muted" style={{ backgroundColor: 'hsl(var(--muted))' }} />
-                )}
-              </div>
-              
-              {isUrlEditing ? (
-                // Edit mode
-                <div className="flex-1 flex items-center gap-2">
-                  <Input
-                    value={editUrlName}
-                    onChange={(e) => setEditUrlName(e.target.value)}
-                    onKeyDown={handleUrlEditKeyDown}
-                    className="h-7 text-sm flex-1"
-                    placeholder={url.originalTitle}
-                    autoFocus
-                    onPointerDown={(e) => e.stopPropagation()}
-                  />
-                  <Button
-                    size="sm"
-                    onClick={handleSaveUrlEdit}
-                    disabled={!editUrlName.trim()}
-                    className="h-7 w-7 p-0"
-                    onPointerDown={(e) => e.stopPropagation()}
-                  >
-                    <Check className="h-3 w-3" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={handleCancelUrlEdit}
-                    className="h-7 w-7 p-0"
-                    onPointerDown={(e) => e.stopPropagation()}
-                  >
-                    <X className="h-3 w-3" />
-                  </Button>
-                </div>
-              ) : (
-                // View mode
-                <div className="flex-1 flex items-center gap-2 group min-w-0">
-                  {/* Text container with proper flex shrinking */}
-                  <span
-                    className="flex-1 truncate text-base text-muted-foreground hover:text-foreground cursor-pointer min-w-0"
-                    onClick={() => handleUrlClick(url)}
-                    title={`Click to open: ${url.url}`}
-                  >
-                    {url.customName || url.originalTitle}
-                  </span>
-                  
-                  {/* Edit button */}
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 hover:bg-muted/50 transition-all duration-200 flex-shrink-0 rounded-md"
-                    onClick={(e) => handleStartUrlEdit(url, e)}
-                    title="Edit name"
-                    onPointerDown={(e) => e.stopPropagation()}
-                  >
-                    <Edit2 className="h-3 w-3" />
-                  </Button>
-                  
-                  {/* Delete button */}
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 hover:bg-destructive/20 hover:text-destructive transition-all duration-200 flex-shrink-0 rounded-md"
-                    onClick={(e) => handleDeleteUrl(url, e)}
-                    title="Delete URL"
-                    onPointerDown={(e) => e.stopPropagation()}
-                  >
-                    <Trash2 className="h-3 w-3" />
-                  </Button>
-                </div>
-              )}
-            </div>
-          );
-        })}
-        
-        {/* Expand/Collapse URLs button */}
-        {collection.urlIds.length > DISPLAY_LIMIT && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="w-full justify-start text-muted-foreground hover:text-foreground h-auto py-1.5 px-0"
-            onClick={() => {
-              const newShowAllUrls = !showAllUrls;
-              console.log('🔘 Show More/Less button clicked:', {
+      <SortableContext 
+        items={displayedUrls} 
+        strategy={verticalListSortingStrategy}
+      >
+        <div className="space-y-2 mb-3">
+          {displayedUrls.map((urlId) => {
+            const url = urls[urlId];
+            if (!url) {
+              console.warn('⚠️ URL not found in urls record:', {
+                urlId,
                 collectionName: collection.name,
-                currentShowAllUrls: showAllUrls,
-                newShowAllUrls,
-                totalUrls: collection.urlIds.length,
-                displayLimit: DISPLAY_LIMIT
+                availableUrlIds: Object.keys(urls),
+                collectionUrlIds: collection.urlIds
               });
-              setShowAllUrls(newShowAllUrls);
-            }}
-          >
-            {showAllUrls ? (
-              <>
-                <ChevronDown className="mr-2 h-3 w-3 rotate-180" />
-                Show Less
-              </>
-            ) : (
-              <>
-                <ChevronDown className="mr-2 h-3 w-3" />
-                ⋮ +{collection.urlIds.length - DISPLAY_LIMIT} more
-              </>
-            )}
-          </Button>
-        )}
-      </div>
+              
+              // Render a placeholder for missing URLs instead of returning null
+              return (
+                <div key={urlId} className="flex items-center gap-2 opacity-50">
+                  <div className="flex-shrink-0 w-4 h-4 rounded-sm bg-red-200 dark:bg-red-800" />
+                  <span className="flex-1 text-sm text-muted-foreground italic">
+                    Missing URL (ID: {urlId.substring(0, 8)}...)
+                  </span>
+                  <span className="text-xs text-red-600 dark:text-red-400">⚠️</span>
+                </div>
+              );
+            }
+            
+            return (
+              <SortableURLItem
+                key={urlId}
+                url={url}
+                editingUrlId={editingUrlId}
+                editUrlName={editUrlName}
+                onStartEdit={handleStartUrlEdit}
+                onSaveEdit={handleSaveUrlEdit}
+                onCancelEdit={handleCancelUrlEdit}
+                onEditKeyDown={handleUrlEditKeyDown}
+                onUrlClick={handleUrlClick}
+                onDeleteUrl={handleDeleteUrl}
+                setEditUrlName={setEditUrlName}
+              />
+            );
+          })}
+          
+          {/* Expand/Collapse URLs button */}
+          {collection.urlIds.length > DISPLAY_LIMIT && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="w-full justify-start text-muted-foreground hover:text-foreground h-auto py-1.5 px-0"
+              onClick={() => {
+                const newShowAllUrls = !showAllUrls;
+                console.log('🔘 Show More/Less button clicked:', {
+                  collectionName: collection.name,
+                  currentShowAllUrls: showAllUrls,
+                  newShowAllUrls,
+                  totalUrls: collection.urlIds.length,
+                  displayLimit: DISPLAY_LIMIT
+                });
+                setShowAllUrls(newShowAllUrls);
+              }}
+            >
+              {showAllUrls ? (
+                <>
+                  <ChevronDown className="mr-2 h-3 w-3 rotate-180" />
+                  Show Less
+                </>
+              ) : (
+                <>
+                  <ChevronDown className="mr-2 h-3 w-3" />
+                  ⋮ +{collection.urlIds.length - DISPLAY_LIMIT} more
+                </>
+              )}
+            </Button>
+          )}
+        </div>
+      </SortableContext>
       
       <div className="text-base text-muted-foreground">
         {collection.urlIds.length} tabs

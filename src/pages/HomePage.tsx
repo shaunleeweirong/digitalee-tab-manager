@@ -934,6 +934,66 @@ export default function HomePage() {
     }
   };
 
+  const handleReorderURLs = async (collectionId: string, urlIds: string[]) => {
+    console.log('🔄 Starting URL reordering:', {
+      collectionId,
+      urlCount: urlIds.length,
+      newOrder: urlIds.slice(0, 3).map(id => id.substring(0, 8)).join(', ') + 
+                (urlIds.length > 3 ? `, ...${urlIds.length - 3} more` : '')
+    });
+
+    try {
+      // Update storage
+      await storage.reorderURLsInCollection(collectionId, urlIds);
+      console.log('✅ Storage updated successfully');
+
+      // Update local state
+      const updatedCollection = await storage.getCollection(collectionId);
+      if (updatedCollection) {
+        setCollectionsMap(prev => ({
+          ...prev,
+          [collectionId]: updatedCollection
+        }));
+        console.log('✅ Local state updated successfully');
+      }
+
+      // Update search index (URLs positions may affect search results)
+      try {
+        console.log('🔍 Updating search index for reordered URLs...');
+        await searchService.initialize();
+        console.log('✅ Search index updated successfully');
+      } catch (searchIndexError) {
+        console.error('❌ Failed to update search index (continuing with reorder):', searchIndexError);
+        // Don't throw - continue with reorder even if search index update fails
+      }
+
+      // Show success toast
+      toast.success('URLs reordered successfully', {
+        description: `Updated order in collection`,
+      });
+
+    } catch (error) {
+      console.error('❌ Failed to reorder URLs:', {
+        collectionId,
+        urlCount: urlIds.length,
+        error: error instanceof Error ? error.message : error
+      });
+
+      // Show error toast
+      toast.error('Failed to reorder URLs', {
+        description: error instanceof Error ? error.message : 'Unknown error occurred',
+      });
+
+      // Reload data to revert any partial changes
+      try {
+        await loadData();
+        console.log('✅ Data reloaded after reorder failure');
+      } catch (reloadError) {
+        console.error('❌ Failed to reload data after reorder failure:', reloadError);
+      }
+    }
+  };
+
   const handleDeleteCollection = async (collectionId: string) => {
     const collection = collectionsMap[collectionId];
     if (!collection) return;
@@ -1091,6 +1151,54 @@ export default function HomePage() {
         }
         
         return;
+      }
+
+      // Handle URL reordering within a collection
+      if (activeData?.type !== 'tab' && overData?.type !== 'tab' && !overData?.type) {
+        // Check if both active and over are URL IDs and they're in the same collection
+        const activeUrlId = active.id as string;
+        const overUrlId = over.id as string;
+        
+        // Find which collection these URLs belong to
+        let sharedCollectionId: string | null = null;
+        for (const [collectionId, collection] of Object.entries(collectionsMap)) {
+          if (collection.urlIds.includes(activeUrlId) && collection.urlIds.includes(overUrlId)) {
+            sharedCollectionId = collectionId;
+            break;
+          }
+        }
+        
+        if (sharedCollectionId) {
+          console.log('🔄 URL reordering detected:', {
+            activeUrlId: activeUrlId.substring(0, 8),
+            overUrlId: overUrlId.substring(0, 8),
+            collectionId: sharedCollectionId
+          });
+          
+          const collection = collectionsMap[sharedCollectionId];
+          if (collection) {
+            const urlIds = [...collection.urlIds];
+            const oldIndex = urlIds.indexOf(activeUrlId);
+            const newIndex = urlIds.indexOf(overUrlId);
+            
+            if (oldIndex !== -1 && newIndex !== -1 && oldIndex !== newIndex) {
+              // Reorder the URLs
+              const reorderedUrlIds = arrayMove(urlIds, oldIndex, newIndex);
+              
+              console.log('🔄 Reordering URLs:', {
+                oldIndex,
+                newIndex,
+                oldOrder: urlIds.slice(0, 3).map(id => id.substring(0, 8)).join(', '),
+                newOrder: reorderedUrlIds.slice(0, 3).map(id => id.substring(0, 8)).join(', ')
+              });
+              
+              // Call the reorder handler
+              await handleReorderURLs(sharedCollectionId, reorderedUrlIds);
+            }
+          }
+          
+          return;
+        }
       }
 
       console.log('🔄 Checking for collection reordering...');
