@@ -1,6 +1,6 @@
 {
   "../../../../@crx/manifest": {
-    "file": "assets/crx-manifest.js-DlYVaVvc.js",
+    "file": "assets/crx-manifest.js-D1hcij9X.js",
     "name": "crx-manifest.js",
     "src": "../../../../@crx/manifest",
     "isEntry": true
@@ -17,7 +17,7 @@
     ]
   },
   "index.html": {
-    "file": "assets/newtab-BF99ryHR.js",
+    "file": "assets/newtab-BChdU1mE.js",
     "name": "newtab",
     "src": "index.html",
     "isEntry": true,

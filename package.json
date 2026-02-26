@@ -1,6 +1,6 @@
 {
   "name": "digitalee-tab-manager",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A Chrome extension for visual tab management with fuzzy search",
   "type": "module",
   "scripts": {

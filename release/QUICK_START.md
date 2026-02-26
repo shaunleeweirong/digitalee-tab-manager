@@ -79,6 +79,10 @@ After installation, open a new tab (Cmd+T or Ctrl+T). You'll see the Digitalee T
 **Add More Tabs to Existing Collections:**
 - Save a tab and choose an existing collection from the dropdown
 
+**Reorder URLs within Collections:**
+- Hover over any URL in a collection to see the drag handle (⋮⋮)
+- Click and drag the handle to reorder URLs within the collection
+
 ---
 
 ## 🎨 Understanding the Interface
